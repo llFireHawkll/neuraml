@@ -34,7 +34,11 @@ class Outliers(BaseModel):
 
 
 class Bucketing(BaseModel):
-    pass
+    global_bucket_size: int = 10
+    bucket_strategy: Dict[str, Dict[str, int]] = {}
+
+    class config:
+        extra = "allow"
 
 
 class ClsVariableImputation(Imputation):
@@ -202,6 +206,129 @@ class ClsVariableImputation(Imputation):
         # Step-1 Check state_flag status
         if self.state_flag:
             return self._get_dict_as_string(input_dict=self.applied_impute_details)
+        else:
+            # Step-2 Else raise error
+            raise InstanceNotCalledError()
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class ClsVariableBucketing(Bucketing):
+    def __init__(self, **kwargs) -> None:
+        Bucketing.__init__(self, **kwargs)
+
+        # Setting up internal attributes
+        self.state_flag = False
+        self.applied_bucket_details = dict()
+
+    def _do_bucketing(self, dataframe: pd.DataFrame, variable: str, bucket_size: int):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+            variable (str): _description_
+            bucket_size (int): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        dataframe[variable + "_BK"] = pd.cut(
+            dataframe[variable], bins=bucket_size
+        ).apply(lambda x: x.mid)
+
+        return dataframe
+
+    def _fit(self, dataframe: pd.DataFrame):
+        """ """
+        # Step-1 Iterate over all the columns mentioned in keys
+        for variable in self.bucket_strategy.keys():
+            # Check what operation is specified in the dictionary for each variable
+            # returns a dictionary
+            # Format {'bucket_size' : 'int'}
+            # Step-1a Fetch the bucket size
+            bucket_size = self.bucket_strategy[variable].get(
+                "bucket_size", self.global_bucket_size
+            )
+
+            # Step-2 Fill the applied bucket details dictionary
+            self.applied_bucket_details[variable] = {
+                "bucket_size": bucket_size,
+                "bucket_variable_name": variable + "_BK",
+            }
+
+    def _transform(self, dataframe: pd.DataFrame):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+        """
+        # Step-1 Iterate all the columns from the bucket strategy dictionary
+        for variable in self.bucket_strategy.keys():
+            # Step-1a Get the bucket_size from applied bucket details dictionary
+            bucket_size = self.applied_bucket_details[variable]["bucket_size"]
+
+            # Step-2 Transform the data to create bucket columns
+            dataframe = self._do_bucketing(
+                dataframe=dataframe, variable=variable, bucket_size=bucket_size
+            )
+
+        return dataframe
+
+    def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+
+        Raises:
+            EmptyDataFrameError: _description_
+            NoneError: _description_
+
+        Returns:
+            pd.DataFrame: _description_
+        """
+        # Step-1 Check for empty dataframe
+        if isinstance(dataframe, pd.DataFrame):
+            if dataframe.shape[0] == 0:
+                raise EmptyDataFrameError()
+        elif dataframe is None:
+            raise NoneError()
+
+        # Step-2 Setting state_flag of instance to True
+        self.state_flag = True
+
+        # Step-3 Fit and transform the data
+        # which in turn will impute the data as mentioned
+        self._fit(dataframe=dataframe)
+        output_dataframe = self._transform(dataframe=dataframe)
+
+        return output_dataframe
+
+    def _get_dict_as_string(self, input_dict: dict) -> str:
+        """_summary_
+
+        Args:
+            input_dict (dict): _description_
+
+        Returns:
+            str: _description_
+        """
+        output_list = []
+
+        for column_name, impute_dict in input_dict.items():
+            temp_list = []
+
+            for key, value in impute_dict.items():
+                temp_list.append(str(key) + ": " + str(value))
+            output_list.append(str(column_name) + " -> " + ", ".join(temp_list))
+
+        return " \n".join(output_list)
+
+    def __repr__(self):
+        # Step-1 Check state_flag status
+        if self.state_flag:
+            return self._get_dict_as_string(input_dict=self.applied_bucket_details)
         else:
             # Step-2 Else raise error
             raise InstanceNotCalledError()
