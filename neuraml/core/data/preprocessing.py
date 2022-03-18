@@ -4,14 +4,37 @@ from neuraml.exceptions.exceptions import (
     InstanceNotCalledError,
 )
 from sklearn.preprocessing import LabelEncoder, OrdinalEncoder, OneHotEncoder
-from pydantic import BaseModel, validator
 from typing_extensions import Literal
-from typing import Optional, Dict, Union
+from pydantic import BaseModel
+from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
 
 __all__ = ["ClsDataPreProcessing"]
+
+# TODO: 1. Add the global mechanism to check all the features if they needs all the preprocessing
+
+
+def _get_dict_as_string(input_dict) -> str:
+    """_summary_
+
+    Args:
+        input_dict (dict): _description_
+
+    Returns:
+        str: _description_
+    """
+    output_list = []
+
+    for column_name, impute_dict in input_dict.items():
+        temp_list = []
+
+        for key, value in impute_dict.items():
+            temp_list.append(str(key) + ": " + str(value))
+        output_list.append(str(column_name) + " -> " + ", ".join(temp_list))
+
+    return " \n".join(output_list)
 
 
 class Imputation(BaseModel):
@@ -26,11 +49,22 @@ class Imputation(BaseModel):
 
 
 class Encoding(BaseModel):
-    pass
+    global_encoding_strategy: Literal[
+        "LabelEncoder", "OneHotEncoder", "OrdinalEncoder"
+    ] = "LabelEncoder"
+    global_replace_flag: bool = False
+    encoding_strategy: Dict[str, Dict[str, Union[str, bool]]] = {}
+
+    class config:
+        extra = "allow"
 
 
-class Outliers(BaseModel):
-    pass
+class Capping(BaseModel):
+    global_capping_strategy: Literal["IQR", "PERCENTILES"] = "IQR"
+    capping_strategy: Dict[str, Dict[str, int]] = {}
+
+    class config:
+        extra = "allow"
 
 
 class Bucketing(BaseModel):
@@ -182,30 +216,10 @@ class ClsVariableImputation(Imputation):
 
         return output_dataframe
 
-    def _get_dict_as_string(self, input_dict: dict) -> str:
-        """_summary_
-
-        Args:
-            input_dict (dict): _description_
-
-        Returns:
-            str: _description_
-        """
-        output_list = []
-
-        for column_name, impute_dict in input_dict.items():
-            temp_list = []
-
-            for key, value in impute_dict.items():
-                temp_list.append(str(key) + ": " + str(value))
-            output_list.append(str(column_name) + " -> " + ", ".join(temp_list))
-
-        return " \n".join(output_list)
-
     def __repr__(self):
         # Step-1 Check state_flag status
         if self.state_flag:
-            return self._get_dict_as_string(input_dict=self.applied_impute_details)
+            return _get_dict_as_string(input_dict=self.applied_impute_details)
         else:
             # Step-2 Else raise error
             raise InstanceNotCalledError()
@@ -214,35 +228,18 @@ class ClsVariableImputation(Imputation):
         return self.__repr__()
 
 
-class ClsVariableBucketing(Bucketing):
+class ClsVariableEncoding(Encoding):
     def __init__(self, **kwargs) -> None:
-        Bucketing.__init__(self, **kwargs)
+        Encoding.__init__(self, **kwargs)
 
         # Setting up internal attributes
         self.state_flag = False
-        self.applied_bucket_details = dict()
-
-    def _do_bucketing(self, dataframe: pd.DataFrame, variable: str, bucket_size: int):
-        """_summary_
-
-        Args:
-            dataframe (pd.DataFrame): _description_
-            variable (str): _description_
-            bucket_size (int): _description_
-
-        Returns:
-            _type_: _description_
-        """
-        dataframe[variable + "_BK"] = pd.cut(
-            dataframe[variable], bins=bucket_size
-        ).apply(lambda x: x.mid)
-
-        return dataframe
+        self.applied_encoding_details = dict()
 
     def _fit(self, dataframe: pd.DataFrame):
         """ """
         # Step-1 Iterate over all the columns mentioned in keys
-        for variable in self.bucket_strategy.keys():
+        for variable in self.capping_strategy.keys():
             # Check what operation is specified in the dictionary for each variable
             # returns a dictionary
             # Format {'bucket_size' : 'int'}
@@ -305,30 +302,234 @@ class ClsVariableBucketing(Bucketing):
 
         return output_dataframe
 
-    def _get_dict_as_string(self, input_dict: dict) -> str:
+    def __repr__(self):
+        # Step-1 Check state_flag status
+        if self.state_flag:
+            return _get_dict_as_string(input_dict=self.applied_capping_details)
+        else:
+            # Step-2 Else raise error
+            raise InstanceNotCalledError()
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class ClsVariableCapping(Capping):
+    def __init__(self, **kwargs) -> None:
+        Capping.__init__(self, **kwargs)
+
+        # Setting up internal attributes
+        self.state_flag = False
+        self.applied_capping_details = dict()
+
+    def _fit(self, dataframe: pd.DataFrame):
+        """ """
+        # Step-1 Iterate over all the columns mentioned in keys
+        for variable in self.capping_strategy.keys():
+            # Check what operation is specified in the dictionary for each variable
+            # returns a dictionary
+            # Format {'bucket_size' : 'int'}
+            # Step-1a Fetch the bucket size
+            bucket_size = self.bucket_strategy[variable].get(
+                "bucket_size", self.global_bucket_size
+            )
+
+            # Step-2 Fill the applied bucket details dictionary
+            self.applied_bucket_details[variable] = {
+                "bucket_size": bucket_size,
+                "bucket_variable_name": variable + "_BK",
+            }
+
+    def _transform(self, dataframe: pd.DataFrame):
         """_summary_
 
         Args:
-            input_dict (dict): _description_
+            dataframe (pd.DataFrame): _description_
+        """
+        # Step-1 Iterate all the columns from the bucket strategy dictionary
+        for variable in self.bucket_strategy.keys():
+            # Step-1a Get the bucket_size from applied bucket details dictionary
+            bucket_size = self.applied_bucket_details[variable]["bucket_size"]
+
+            # Step-2 Transform the data to create bucket columns
+            dataframe = self._do_bucketing(
+                dataframe=dataframe, variable=variable, bucket_size=bucket_size
+            )
+
+        return dataframe
+
+    def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+
+        Raises:
+            EmptyDataFrameError: _description_
+            NoneError: _description_
 
         Returns:
-            str: _description_
+            pd.DataFrame: _description_
         """
-        output_list = []
+        # Step-1 Check for empty dataframe
+        if isinstance(dataframe, pd.DataFrame):
+            if dataframe.shape[0] == 0:
+                raise EmptyDataFrameError()
+        elif dataframe is None:
+            raise NoneError()
 
-        for column_name, impute_dict in input_dict.items():
-            temp_list = []
+        # Step-2 Setting state_flag of instance to True
+        self.state_flag = True
 
-            for key, value in impute_dict.items():
-                temp_list.append(str(key) + ": " + str(value))
-            output_list.append(str(column_name) + " -> " + ", ".join(temp_list))
+        # Step-3 Fit and transform the data
+        # which in turn will impute the data as mentioned
+        self._fit(dataframe=dataframe)
+        output_dataframe = self._transform(dataframe=dataframe)
 
-        return " \n".join(output_list)
+        return output_dataframe
 
     def __repr__(self):
         # Step-1 Check state_flag status
         if self.state_flag:
-            return self._get_dict_as_string(input_dict=self.applied_bucket_details)
+            return _get_dict_as_string(input_dict=self.applied_capping_details)
+        else:
+            # Step-2 Else raise error
+            raise InstanceNotCalledError()
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class ClsVariableBucketing(Bucketing):
+    def __init__(self, **kwargs) -> None:
+        Bucketing.__init__(self, **kwargs)
+
+        # Setting up internal attributes
+        self.state_flag = False
+        self.applied_bucket_details = dict()
+
+    def _do_bucketing(self, dataframe: pd.DataFrame, variable: str, bucket_size: int):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+            variable (str): _description_
+            bucket_size (int): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        dataframe[variable + "_BK"] = pd.cut(
+            dataframe[variable], bins=bucket_size
+        ).apply(lambda x: x.mid)
+
+        return dataframe
+
+    def _fit(self):
+        """ """
+        # Step-1 Iterate over all the columns mentioned in keys
+        for variable in self.bucket_strategy.keys():
+            # Check what operation is specified in the dictionary for each variable
+            # returns a dictionary
+            # Format {'bucket_size' : 'int'}
+            # Step-1a Fetch the bucket size
+            bucket_size = self.bucket_strategy[variable].get(
+                "bucket_size", self.global_bucket_size
+            )
+
+            # Step-2 Fill the applied bucket details dictionary
+            self.applied_bucket_details[variable] = {
+                "bucket_size": bucket_size,
+                "bucket_variable_name": variable + "_BK",
+            }
+
+    def _transform(self, dataframe: pd.DataFrame):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+        """
+        # Step-1 Iterate all the columns from the bucket strategy dictionary
+        for variable in self.bucket_strategy.keys():
+            # Step-1a Get the bucket_size from applied bucket details dictionary
+            bucket_size = self.applied_bucket_details[variable]["bucket_size"]
+
+            # Step-2 Transform the data to create bucket columns
+            dataframe = self._do_bucketing(
+                dataframe=dataframe, variable=variable, bucket_size=bucket_size
+            )
+
+        return dataframe
+
+    def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+
+        Raises:
+            EmptyDataFrameError: _description_
+            NoneError: _description_
+
+        Returns:
+            pd.DataFrame: _description_
+        """
+        # Step-1 Check for empty dataframe
+        if isinstance(dataframe, pd.DataFrame):
+            if dataframe.shape[0] == 0:
+                raise EmptyDataFrameError()
+        elif dataframe is None:
+            raise NoneError()
+
+        # Step-2 Setting state_flag of instance to True
+        self.state_flag = True
+
+        # Step-3 Fit and transform the data
+        # which in turn will impute the data as mentioned
+        self._fit()
+        output_dataframe = self._transform(dataframe=dataframe)
+
+        return output_dataframe
+
+    def __repr__(self):
+        # Step-1 Check state_flag status
+        if self.state_flag:
+            return _get_dict_as_string(input_dict=self.applied_bucket_details)
+        else:
+            # Step-2 Else raise error
+            raise InstanceNotCalledError()
+
+    def __str__(self):
+        return self.__repr__()
+
+
+class ClsDataPreProcessing:
+    def __init__(self, **kwargs) -> None:
+
+        # Step- Setting up internal attributes
+        self._imputation_status: bool = False
+        self._capping_status: bool = False
+        self._encoding_status: bool = False
+        self._bucketing_statu: bool = False
+        self.processing_status: bool = False
+
+    def __call__(self, dataframe: pd.DataFrame):
+        pass
+
+    def __repr__(self):
+        # Step-1 Check processing_status
+        if self.processing_status:
+            return (
+                "Data Pre-Processing: "
+                + "\nImputation Done?: "
+                + str(self._imputation_status)
+                + "\nCapping Done?: "
+                + str(self._capping_status)
+                + "\nEncoding Done?: "
+                + str(self._encoding_status)
+                + "\nBucketing Done?: "
+                + str(self._bucketing_statu)
+            )
         else:
             # Step-2 Else raise error
             raise InstanceNotCalledError()

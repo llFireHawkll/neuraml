@@ -5,7 +5,7 @@ xgboost==1.5.2
 optuna==2.10.0
 shap==0.40.0
 mlflow==1.23.1
-pydantic==1.9.0
+pydantic==1.8.2
 pytest==7.1.1
 coverage==6.3.2
 loguru==0.6.0
