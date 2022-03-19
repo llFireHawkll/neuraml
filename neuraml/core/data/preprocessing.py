@@ -1,4 +1,4 @@
-from typing import Dict, Union
+from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
@@ -14,6 +14,7 @@ from typing_extensions import Literal
 __all__ = ["ClsDataPreProcessing"]
 
 # TODO: 1. Add the global mechanism to check all the features if they needs all the preprocessing
+# TODO: 2. Add rigrous documentation for each class based on pep8 standards
 
 
 def _get_dict_as_string(input_dict) -> str:
@@ -61,7 +62,7 @@ class Encoding(BaseModel):
 
 class Capping(BaseModel):
     global_capping_strategy: Literal["IQR", "PERCENTILES"] = "IQR"
-    capping_strategy: Dict[str, Dict[str, int]] = {}
+    capping_strategy: Dict[str, Dict[str, Union[str, int, float]]] = {}
 
     class config:
         extra = "allow"
@@ -322,38 +323,175 @@ class ClsVariableCapping(Capping):
         self.state_flag = False
         self.applied_capping_details = dict()
 
+    def _get_capping_bounds(
+        self,
+        dataframe: pd.DataFrame,
+        variable: str,
+        capping_type: str,
+        iqr_range_bound: float = 1.5,
+        percentile_range: List[float] = [0.0, 99.9],
+    ):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+            variable (str): _description_
+            capping_type (str): _description_
+            iqr_range_bound (float, optional): _description_. Defaults to 1.5.
+            percentile_range (List[float], optional): _description_. Defaults to [0, 99.9].
+        """
+        # Step-1 Sort the dataframe specified column/variable - Ascending sort
+        dataframe_column = np.sort(dataframe[variable])
+
+        # Step-2 Based on the capping_type
+        if capping_type == "IQR":
+            # Step-2a. Calculate the percentile 25 and 75
+            Q1, Q3 = np.percentile(dataframe_column, [25, 75])
+
+            # Step-2b. Compute the IQR Range
+            IQR = Q3 - Q1
+
+            # Step-2c. Compute the Lower and Upper Bound
+            lower_bound = Q1 - (iqr_range_bound * IQR)
+            upper_bound = Q3 + (iqr_range_bound * IQR)
+
+        elif capping_type == "PERCENTILES":
+            # Step-2a. Calculate the percentile  and 75
+            Qmin, Qmax = np.percentile(dataframe_column, percentile_range)
+
+            # Step-2b. Compute the Lower and Upper Bound
+            lower_bound = Qmin
+            upper_bound = Qmax
+
+        else:
+            raise ValueError(
+                "Incorrect value passed for capping_type should be in IQR, PERCENTILES"
+            )
+
+        # Step-3 Filling up applied capping details dictionary
+        self.applied_capping_details[variable] = {
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound,
+        }
+
     def _fit(self, dataframe: pd.DataFrame):
-        """ """
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+        """
         # Step-1 Iterate over all the columns mentioned in keys
         for variable in self.capping_strategy.keys():
             # Check what operation is specified in the dictionary for each variable
             # returns a dictionary
-            # Format {'bucket_size' : 'int'}
-            # Step-1a Fetch the bucket size
-            bucket_size = self.bucket_strategy[variable].get(
-                "bucket_size", self.global_bucket_size
-            )
+            # Format {'capping_method' : 'IQR',
+            #         'capping_params' : int/float}
+            #        {'capping_method' : 'PERCENTILES',
+            #         'capping_params' : []}
 
-            # Step-2 Fill the applied bucket details dictionary
-            self.applied_bucket_details[variable] = {
-                "bucket_size": bucket_size,
-                "bucket_variable_name": variable + "_BK",
-            }
+            # Step-2 Get the configuration for variable it is necessary to supply
+            # configuration or pass an empty dictionary(we use global strategy to do capping)
+            variable_capping_config = self.capping_strategy.get(variable, {})
+
+            # Step-3 Check the configuration if it is empty then apply
+            # global capping strategy for that particular variable
+            if len(variable_capping_config) == 0:
+                self._get_capping_bounds(
+                    dataframe=dataframe,
+                    variable=variable,
+                    capping_type=self.global_capping_strategy,
+                )
+            else:
+                # Step-4a Take the configuration variables out from dictionary
+                capping_method = variable_capping_config.get(
+                    "capping_method", self.global_capping_strategy
+                )
+                capping_params = variable_capping_config.get("capping_params", None)
+
+                # Step-4b If the capping method is IQR
+                if capping_method == "IQR":
+                    # Step-4ba Checking if any params are passed or not
+                    if capping_params is None:
+                        self._get_capping_bounds(
+                            dataframe=dataframe,
+                            variable=variable,
+                            capping_type=capping_method,
+                        )
+                    else:
+                        # Step-4ba Ensuring that passed params are of correct type
+                        assert isinstance(
+                            capping_params, (int, float)
+                        ), "IQR Range bound is not an integer/float type"
+
+                        # Step-4bb Calling the method to populate the dictionary for
+                        # variable with correct upper and lower bounds
+                        self._get_capping_bounds(
+                            dataframe=dataframe,
+                            variable=variable,
+                            capping_type=capping_method,
+                            iqr_range_bound=capping_params,
+                        )
+
+                # Step-4b If the capping method is PERCENTILES
+                elif capping_method == "PERCENTILES":
+                    # Step-4ba Checking if any params are passed or not
+                    if capping_params is None:
+                        self._get_capping_bounds(
+                            dataframe=dataframe,
+                            variable=variable,
+                            capping_type=capping_method,
+                        )
+                    else:
+                        # Step-4ba Ensuring that passed params are of
+                        # correct type and correct length
+                        assert (
+                            len(capping_params) == 2
+                        ), "Please Supply List of [LB, UB] in the config"
+
+                        assert isinstance(
+                            capping_params[0], (int, float)
+                        ), "LB is not an integer/float instance"
+                        assert isinstance(
+                            capping_params[1], (int, float)
+                        ), "UB is not an integer/float instance"
+
+                        # Step-4bb Calling the method to populate the dictionary for
+                        # variable with correct upper and lower bounds
+                        self._get_capping_bounds(
+                            dataframe=dataframe,
+                            variable=variable,
+                            capping_type=capping_method,
+                            percentile_range=capping_params,
+                        )
+                else:
+                    # Step-4b Raising type error for incorrect capping method
+                    raise NotImplementedError(
+                        str(capping_method)
+                        + " -- Not Implemented Select From [IQR, PERCENTILES]"
+                    )
 
     def _transform(self, dataframe: pd.DataFrame):
         """_summary_
 
         Args:
             dataframe (pd.DataFrame): _description_
-        """
-        # Step-1 Iterate all the columns from the bucket strategy dictionary
-        for variable in self.bucket_strategy.keys():
-            # Step-1a Get the bucket_size from applied bucket details dictionary
-            bucket_size = self.applied_bucket_details[variable]["bucket_size"]
 
-            # Step-2 Transform the data to create bucket columns
-            dataframe = self._do_bucketing(
-                dataframe=dataframe, variable=variable, bucket_size=bucket_size
+        Returns:
+            _type_: _description_
+        """
+        # Step-1 Iterate all the columns from the applied bucket strategy dictionary
+        for variable in self.applied_capping_details.keys():
+            lower_bound = self.applied_capping_details[variable]["lower_bound"]
+            upper_bound = self.applied_capping_details[variable]["upper_bound"]
+
+            # Step-2 Removing outliers greater than upper bound from the dataframe
+            dataframe[variable] = np.where(
+                dataframe[variable] > upper_bound, upper_bound, dataframe[variable]
+            )
+
+            # Step-3 Removing outliers lower than lower bound from the dataframe
+            dataframe[variable] = np.where(
+                dataframe[variable] < lower_bound, lower_bound, dataframe[variable]
             )
 
         return dataframe
