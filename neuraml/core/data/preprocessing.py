@@ -504,17 +504,99 @@ class ClsVariableBucketing(Bucketing):
 
 
 class ClsDataPreProcessing:
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        global_numerical_impute_strategy: str,
+        global_categorical_impute_strategy: str,
+        impute_strategy_config: Dict[str, Dict[str, Union[str, int, float]]],
+        global_capping_strategy: str,
+        capping_strategy_config: Dict[str, Dict[str, int]],
+        global_encoding_strategy: str,
+        global_replace_flag: bool,
+        encoding_strategy_config: Dict[str, Dict[str, Union[str, bool]]],
+        global_bucket_size: int,
+        bucket_strategy_config: Dict[str, Dict[str, int]],
+        enable_imputation: bool,
+        enable_capping: bool,
+        enable_encoding: bool,
+        enable_bucketing: bool,
+    ) -> None:
+        # Step-1 Create instance of each pre-processing class
+        self._imputation = ClsVariableImputation(
+            **{
+                "global_numerical_impute_strategy": global_numerical_impute_strategy,
+                "global_categorical_impute_strategy": global_categorical_impute_strategy,
+                "impute_strategy": impute_strategy_config,
+            }
+        )
+        self._capping = ClsVariableCapping(
+            **{
+                "global_capping_strategy": global_capping_strategy,
+                "capping_strategy": capping_strategy_config,
+            }
+        )
+        self._encoding = ClsVariableEncoding(
+            **{
+                "global_encoding_strategy": global_encoding_strategy,
+                "global_replace_flag": global_replace_flag,
+                "encoding_strategy": encoding_strategy_config,
+            }
+        )
+        self._bucketing = ClsVariableBucketing(
+            **{
+                "global_bucket_size": global_bucket_size,
+                "bucket_strategy": bucket_strategy_config,
+            }
+        )
 
         # Step- Setting up internal attributes
-        self._imputation_status: bool = False
-        self._capping_status: bool = False
-        self._encoding_status: bool = False
-        self._bucketing_statu: bool = False
+        self._imputation_status: bool = enable_imputation
+        self._capping_status: bool = enable_capping
+        self._encoding_status: bool = enable_encoding
+        self._bucketing_status: bool = enable_bucketing
         self.processing_status: bool = False
 
     def __call__(self, dataframe: pd.DataFrame):
-        pass
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+
+        Raises:
+            EmptyDataFrameError: _description_
+            NoneError: _description_
+
+        Returns:
+            _type_: _description_
+        """
+        # Step-1 Check for empty dataframe
+        if isinstance(dataframe, pd.DataFrame):
+            if dataframe.shape[0] == 0:
+                raise EmptyDataFrameError()
+        elif dataframe is None:
+            raise NoneError()
+
+        # Step-2 Set processing_status = True
+        self.processing_status = True
+
+        # Step-3 Run the pipeline for preprocessing
+        ## Step-3a Execute Data Imputation
+        if self._imputation_status:
+            dataframe = self._imputation(dataframe=dataframe)
+
+        ## Step-3b Execute Outlier Capping
+        if self._capping_status:
+            dataframe = self._capping(dataframe=dataframe)
+
+        ## Step-3c Execute Variable Encoding
+        if self._encoding_status:
+            dataframe = self._encoding(dataframe=dataframe)
+
+        ## Step-3d Execute Variable Bucketing
+        if self._bucketing_status:
+            dataframe = self._bucketing(dataframe=dataframe)
+
+        return dataframe
 
     def __repr__(self):
         # Step-1 Check processing_status
@@ -528,7 +610,7 @@ class ClsDataPreProcessing:
                 + "\nEncoding Done?: "
                 + str(self._encoding_status)
                 + "\nBucketing Done?: "
-                + str(self._bucketing_statu)
+                + str(self._bucketing_status)
             )
         else:
             # Step-2 Else raise error
