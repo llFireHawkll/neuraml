@@ -1,9 +1,10 @@
-from neuraml import __version__ as neuraml_version
-from setuptools import setup, find_packages, Command
-
 import os
 import sys
 from shutil import rmtree
+
+from setuptools import Command, find_packages, setup
+
+from neuraml import __version__ as neuraml_version
 
 here = os.path.abspath(os.path.dirname(__file__))
 

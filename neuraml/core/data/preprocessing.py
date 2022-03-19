@@ -1,15 +1,15 @@
-from neuraml.exceptions.exceptions import (
-    NoneError,
-    EmptyDataFrameError,
-    InstanceNotCalledError,
-)
-from sklearn.preprocessing import LabelEncoder, OrdinalEncoder, OneHotEncoder
-from typing_extensions import Literal
-from pydantic import BaseModel
 from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
+from neuraml.exceptions.exceptions import (
+    EmptyDataFrameError,
+    InstanceNotCalledError,
+    NoneError,
+)
+from pydantic import BaseModel
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder
+from typing_extensions import Literal
 
 __all__ = ["ClsDataPreProcessing"]
 

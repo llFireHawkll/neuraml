@@ -1,13 +1,13 @@
-from neuraml.exceptions.exceptions import (
-    NoneError,
-    EmptyDataFrameError,
-    InstanceNotCalledError,
-)
-from sklearn.preprocessing import train_test_split
-from pydantic import BaseModel, validator
 from typing import Optional
 
 import pandas as pd
+from neuraml.exceptions.exceptions import (
+    EmptyDataFrameError,
+    InstanceNotCalledError,
+    NoneError,
+)
+from pydantic import BaseModel, validator
+from sklearn.preprocessing import train_test_split
 
 __all__ = ["ClsDataIndexing"]
 

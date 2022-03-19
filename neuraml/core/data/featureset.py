@@ -1,5 +1,6 @@
+from typing import Dict, List, Optional, Union
+
 from neuraml.exceptions.exceptions import EmptyListError, InstanceNotCalledError
-from typing import Optional, Union, List, Dict
 from pydantic import BaseModel, validator
 
 __all__ = ["ClsDataFeatureSet"]
