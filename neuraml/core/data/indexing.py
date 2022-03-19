@@ -7,7 +7,7 @@ from neuraml.exceptions.exceptions import (
     NoneError,
 )
 from pydantic import BaseModel, validator
-from sklearn.preprocessing import train_test_split
+from sklearn.model_selection import train_test_split
 
 __all__ = ["ClsDataIndexing"]
 
@@ -19,12 +19,12 @@ class Indexing(BaseModel):
     train_test_split_size: float = 0.15
     random_state: int = 42
 
-    class config:
+    class Config:
         extra = "allow"
 
     @validator("train_test_split_size")
     def validate_train_test_split_size(cls, value):
-        if not (value > 0.0 & value < 1.0):
+        if not ((value > 0.0) and (value < 1.0)):
             raise ValueError(
                 "train_test_split_size should we within specified range [0.0, 1.0]"
             )
@@ -34,7 +34,7 @@ class Indexing(BaseModel):
     def validate_stratify(cls, value, values):
         stratify_variable = values.get("stratify_variable")
         if stratify_variable is None:
-            if not value:
+            if value:
                 raise ValueError(
                     "Error stratify_variable cannot be set None, when stratify is set True!"
                 )
