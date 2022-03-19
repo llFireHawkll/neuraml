@@ -13,9 +13,6 @@ from typing_extensions import Literal
 
 __all__ = ["ClsDataPreProcessing"]
 
-# TODO: 1. Add the global mechanism to check all the features if they needs all the preprocessing
-# TODO: 2. Add rigrous documentation for each class based on pep8 standards
-
 
 def _get_dict_as_string(input_dict) -> str:
     """_summary_
@@ -49,20 +46,20 @@ class Imputation(BaseModel):
         extra = "allow"
 
 
+class Capping(BaseModel):
+    global_capping_strategy: Literal["IQR", "PERCENTILES"] = "IQR"
+    capping_strategy: Dict[str, Dict[str, Union[str, int, float]]] = {}
+
+    class config:
+        extra = "allow"
+
+
 class Encoding(BaseModel):
     global_encoding_strategy: Literal[
         "LabelEncoder", "OneHotEncoder", "OrdinalEncoder"
     ] = "LabelEncoder"
     global_replace_flag: bool = False
     encoding_strategy: Dict[str, Dict[str, Union[str, bool]]] = {}
-
-    class config:
-        extra = "allow"
-
-
-class Capping(BaseModel):
-    global_capping_strategy: Literal["IQR", "PERCENTILES"] = "IQR"
-    capping_strategy: Dict[str, Dict[str, Union[str, int, float]]] = {}
 
     class config:
         extra = "allow"
@@ -175,7 +172,7 @@ class ClsVariableImputation(Imputation):
             dataframe (pd.DataFrame): _description_
         """
         # Step-1 Iterate all the columns from the imputation strategy dictionary
-        for variable in self.impute_strategy.keys():
+        for variable in self.applied_impute_details.keys():
             # Step-1a Get the imputation value from applied imputation details dictionary
             imputation_value = self.applied_impute_details[variable]["imputation_value"]
 
@@ -221,92 +218,6 @@ class ClsVariableImputation(Imputation):
         # Step-1 Check state_flag status
         if self.state_flag:
             return _get_dict_as_string(input_dict=self.applied_impute_details)
-        else:
-            # Step-2 Else raise error
-            raise InstanceNotCalledError()
-
-    def __str__(self):
-        return self.__repr__()
-
-
-class ClsVariableEncoding(Encoding):
-    def __init__(self, **kwargs) -> None:
-        Encoding.__init__(self, **kwargs)
-
-        # Setting up internal attributes
-        self.state_flag = False
-        self.applied_encoding_details = dict()
-
-    def _fit(self, dataframe: pd.DataFrame):
-        """ """
-        # Step-1 Iterate over all the columns mentioned in keys
-        for variable in self.capping_strategy.keys():
-            # Check what operation is specified in the dictionary for each variable
-            # returns a dictionary
-            # Format {'bucket_size' : 'int'}
-            # Step-1a Fetch the bucket size
-            bucket_size = self.bucket_strategy[variable].get(
-                "bucket_size", self.global_bucket_size
-            )
-
-            # Step-2 Fill the applied bucket details dictionary
-            self.applied_bucket_details[variable] = {
-                "bucket_size": bucket_size,
-                "bucket_variable_name": variable + "_BK",
-            }
-
-    def _transform(self, dataframe: pd.DataFrame):
-        """_summary_
-
-        Args:
-            dataframe (pd.DataFrame): _description_
-        """
-        # Step-1 Iterate all the columns from the bucket strategy dictionary
-        for variable in self.bucket_strategy.keys():
-            # Step-1a Get the bucket_size from applied bucket details dictionary
-            bucket_size = self.applied_bucket_details[variable]["bucket_size"]
-
-            # Step-2 Transform the data to create bucket columns
-            dataframe = self._do_bucketing(
-                dataframe=dataframe, variable=variable, bucket_size=bucket_size
-            )
-
-        return dataframe
-
-    def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """_summary_
-
-        Args:
-            dataframe (pd.DataFrame): _description_
-
-        Raises:
-            EmptyDataFrameError: _description_
-            NoneError: _description_
-
-        Returns:
-            pd.DataFrame: _description_
-        """
-        # Step-1 Check for empty dataframe
-        if isinstance(dataframe, pd.DataFrame):
-            if dataframe.shape[0] == 0:
-                raise EmptyDataFrameError()
-        elif dataframe is None:
-            raise NoneError()
-
-        # Step-2 Setting state_flag of instance to True
-        self.state_flag = True
-
-        # Step-3 Fit and transform the data
-        # which in turn will impute the data as mentioned
-        self._fit(dataframe=dataframe)
-        output_dataframe = self._transform(dataframe=dataframe)
-
-        return output_dataframe
-
-    def __repr__(self):
-        # Step-1 Check state_flag status
-        if self.state_flag:
-            return _get_dict_as_string(input_dict=self.applied_capping_details)
         else:
             # Step-2 Else raise error
             raise InstanceNotCalledError()
@@ -538,6 +449,210 @@ class ClsVariableCapping(Capping):
         return self.__repr__()
 
 
+class ClsVariableEncoding(Encoding):
+    def __init__(self, **kwargs) -> None:
+        Encoding.__init__(self, **kwargs)
+
+        # Setting up internal attributes
+        self.state_flag = False
+        self.applied_encoding_details = dict()
+
+    def _get_encoder(
+        self,
+        dataframe: pd.DataFrame,
+        variable: str,
+        encoding_method: str,
+        replace_value: bool,
+    ):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+            variable (str): _description_
+            encoding_method (str): _description_
+        """
+        # Step-1 Based on the specified encoder
+        # Create an encoder instance and save it
+        if encoding_method == "LabelEncoder":
+            # Fitting LabelEncoder
+            encoder = LabelEncoder().fit(dataframe[variable].to_numpy())
+
+        elif encoding_method == "OneHotEncoder":
+            # Fitting OneHotEncoder
+            encoder = OneHotEncoder(sparse=False).fit(
+                dataframe[variable].to_numpy().reshape(-1, 1)
+            )
+
+        elif encoding_method == "OrdinalEncoder":
+            # Fitting OrdinalEncoder
+            encoder = OrdinalEncoder().fit(
+                dataframe[variable].to_numpy().reshape(-1, 1)
+            )
+        else:
+            raise ValueError(
+                "encoding_method: Value Not Present In List! Please select from given list [LabelEncoder, OneHotEncoder, OrdinalEncoder]"
+            )
+
+        # Step-2 Saving the above created encoder instance
+        self.applied_encoding_details[variable] = {
+            "encoder": encoder,
+            "replace_value": replace_value,
+            "encoding_method": encoding_method,
+        }
+
+    def _fit(self, dataframe: pd.DataFrame):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+        """
+        # Step-1 Iterate over all the columns mentioned in keys
+        for variable in self.encoding_strategy.keys():
+            # Check what operation is specified in the dictionary for each variable
+            # Format : variable name will be key and each variable will have a dict
+            # {'encoding_method' : 'LabelEncoder',
+            #  'replace_value' : False}
+
+            # Step-2 Get the specified encoding method and replace value flag
+            encoding_method = self.encoding_strategy[variable].get(
+                "encoding_method", self.global_encoding_strategy
+            )
+
+            replace_value = self.encoding_strategy[variable].get(
+                "replace_value", self.global_replace_flag
+            )
+
+            # Step-3 Fit the encoder on the specified column and store
+            # the details inside the appled_encoding_details dictionary
+            self._get_encoder(
+                dataframe=dataframe,
+                variable=variable,
+                encoding_method=encoding_method,
+                replace_value=replace_value,
+            )
+
+    def _do_transform(self, dataframe: pd.DataFrame, variable: str):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+            variable (str): _description_
+            replace_value (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
+        # Step-1 Get the encoder, replace_value & encoding_method
+        # from the applied_encoding_details dictionary
+        encoder = self.applied_encoding_details[variable]["encoder"]
+        replace_value = self.applied_encoding_details[variable]["replace_value"]
+        encoding_method = self.applied_encoding_details[variable]["encoding_method"]
+
+        # Step-2 We are going to transform the column
+        # and return the dataframe
+        if encoding_method == "LabelEncoder":
+            # replace_value flag determine if we need to drop the source column or not
+            # if replace_value is true then drop column else do not drop the column
+            if replace_value:
+                dataframe[variable] = encoder.transform(
+                    dataframe[variable].to_numpy().ravel()
+                )
+            else:
+                dataframe[variable + "_Enc"] = encoder.transform(
+                    dataframe[variable].to_numpy().ravel()
+                )
+
+        elif encoding_method == "OneHotEncoder":
+            # Transformation of the column
+            transformed = encoder.transform(
+                dataframe[variable].to_numpy().reshape(-1, 1)
+            )
+
+            # one hot encoded dataframe
+            columns = [
+                variable + "_" + "_".join(i.split("_")[1:])
+                for i in encoder.get_feature_names()
+            ]
+            ohe_df = pd.DataFrame(transformed, columns=columns)
+
+            if replace_value:
+                dataframe = pd.concat([dataframe, ohe_df], axis=1).drop(
+                    [variable], axis=1
+                )
+            else:
+                dataframe = pd.concat([dataframe, ohe_df], axis=1)
+
+        elif encoding_method == "OrdinalEncoder":
+            if replace_value:
+                dataframe[variable] = encoder.transform(
+                    dataframe[variable].to_numpy().reshape(-1, 1)
+                ).ravel()
+            else:
+                dataframe[variable + "_Enc"] = encoder.transform(
+                    dataframe[variable].to_numpy().reshape(-1, 1)
+                ).ravel()
+
+        else:
+            raise ValueError("Imputation: Value Not Present In List!")
+
+        return dataframe
+
+    def _transform(self, dataframe: pd.DataFrame):
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+        """
+        # Step-1 Iterate all the columns from the applied_encoding_details dictionary
+        for variable in self.applied_encoding_details.keys():
+            # Step-2 Based on the applied_encoding_details dictionary
+            # perform the transformation
+            dataframe = self._do_transform(dataframe=dataframe, variable=variable)
+
+        return dataframe
+
+    def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """_summary_
+
+        Args:
+            dataframe (pd.DataFrame): _description_
+
+        Raises:
+            EmptyDataFrameError: _description_
+            NoneError: _description_
+
+        Returns:
+            pd.DataFrame: _description_
+        """
+        # Step-1 Check for empty dataframe
+        if isinstance(dataframe, pd.DataFrame):
+            if dataframe.shape[0] == 0:
+                raise EmptyDataFrameError()
+        elif dataframe is None:
+            raise NoneError()
+
+        # Step-2 Setting state_flag of instance to True
+        self.state_flag = True
+
+        # Step-3 Fit and transform the data
+        # which in turn will impute the data as mentioned
+        self._fit(dataframe=dataframe)
+        output_dataframe = self._transform(dataframe=dataframe)
+
+        return output_dataframe
+
+    def __repr__(self):
+        # Step-1 Check state_flag status
+        if self.state_flag:
+            return _get_dict_as_string(input_dict=self.applied_capping_details)
+        else:
+            # Step-2 Else raise error
+            raise InstanceNotCalledError()
+
+    def __str__(self):
+        return self.__repr__()
+
+
 class ClsVariableBucketing(Bucketing):
     def __init__(self, **kwargs) -> None:
         Bucketing.__init__(self, **kwargs)
@@ -588,7 +703,7 @@ class ClsVariableBucketing(Bucketing):
             dataframe (pd.DataFrame): _description_
         """
         # Step-1 Iterate all the columns from the bucket strategy dictionary
-        for variable in self.bucket_strategy.keys():
+        for variable in self.applied_bucket_details.keys():
             # Step-1a Get the bucket_size from applied bucket details dictionary
             bucket_size = self.applied_bucket_details[variable]["bucket_size"]
 
