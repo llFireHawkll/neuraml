@@ -40,17 +40,17 @@ class Imputation(BaseModel):
         "mean", "median", "mode", "max", "min", "zero"
     ] = "mean"
     global_categorical_impute_strategy: Literal["unknown", "mode"] = "unknown"
-    impute_strategy: Dict[str, Dict[str, Union[str, int, float]]] = {}
+    impute_strategy: Dict[str, Dict[str, Union[float, int, str]]] = {}
 
-    class config:
+    class Config:
         extra = "allow"
 
 
 class Capping(BaseModel):
     global_capping_strategy: Literal["IQR", "PERCENTILES"] = "IQR"
-    capping_strategy: Dict[str, Dict[str, Union[str, int, float]]] = {}
+    capping_strategy: Dict[str, Dict[str, Union[float, int, List[float], str]]] = {}
 
-    class config:
+    class Config:
         extra = "allow"
 
 
@@ -59,17 +59,31 @@ class Encoding(BaseModel):
         "LabelEncoder", "OneHotEncoder", "OrdinalEncoder"
     ] = "LabelEncoder"
     global_replace_flag: bool = False
-    encoding_strategy: Dict[str, Dict[str, Union[str, bool]]] = {}
+    encoding_strategy: Dict[str, Dict[str, Union[bool, str]]] = {}
 
-    class config:
+    class Config:
         extra = "allow"
 
 
 class Bucketing(BaseModel):
     global_bucket_size: int = 10
-    bucket_strategy: Dict[str, Dict[str, int]] = {}
+    bucket_strategy: Dict[str, Dict[int, str]] = {}
 
-    class config:
+    class Config:
+        extra = "allow"
+
+
+class PreProcessing(BaseModel):
+    imputation: Imputation
+    capping: Capping
+    encoding: Encoding
+    bucketing: Bucketing
+    enable_imputation: bool = False
+    enable_capping: bool = False
+    enable_encoding: bool = False
+    enable_bucketing: bool = False
+
+    class Config:
         extra = "allow"
 
 
@@ -99,7 +113,7 @@ class ClsVariableImputation(Imputation):
         if variable_dtype == "numeric":
             if missing_flag:
                 if imputation == "value":
-                    value = imputation_value
+                    value = float(imputation_value)
                 elif imputation == "mean":
                     value = np.round(dataframe[variable].mean(), 2)
                 elif imputation == "median":
@@ -115,7 +129,7 @@ class ClsVariableImputation(Imputation):
                 else:
                     raise ValueError("Imputation Method: Not Present!")
             else:
-                value = imputation_value
+                value = float(imputation_value)
 
         elif variable_dtype == "categoric":
             if missing_flag:
@@ -128,7 +142,7 @@ class ClsVariableImputation(Imputation):
                 else:
                     raise ValueError("Imputation Method: Not Present!")
             else:
-                value = imputation_value
+                value = str(imputation_value)
 
         else:
             raise ValueError("Value should be from [numeric, categoric]")
@@ -148,9 +162,20 @@ class ClsVariableImputation(Imputation):
             # returns a dictionary
             # Format {'imputation' : 'Mean',
             #         'variable_dtype' : 'numeric/categoric',
-            #         'impute_value' : int/float}
-            imputation = self.impute_strategy[variable]["imputation"]
+            #         'imputation_value' : int/float}
             variable_dtype = self.impute_strategy[variable]["variable_dtype"]
+
+            if variable_dtype == "numeric":
+                imputation = self.impute_strategy[variable].get(
+                    "imputation", self.global_numerical_impute_strategy
+                )
+            elif variable_dtype == "categoric":
+                imputation = self.impute_strategy[variable].get(
+                    "imputation", self.global_categorical_impute_strategy
+                )
+            else:
+                raise ValueError("Value should be from [numeric, categoric]")
+
             imputation_value = self.impute_strategy[variable].get(
                 "imputation_value", None
             )
@@ -171,6 +196,9 @@ class ClsVariableImputation(Imputation):
         Args:
             dataframe (pd.DataFrame): _description_
         """
+        # Step-0 Create a copy of original dataframe
+        imputated_dataframe = dataframe.copy()
+
         # Step-1 Iterate all the columns from the imputation strategy dictionary
         for variable in self.applied_impute_details.keys():
             # Step-1a Get the imputation value from applied imputation details dictionary
@@ -180,9 +208,9 @@ class ClsVariableImputation(Imputation):
             if imputation_value is None:
                 pass
             else:
-                dataframe[variable].fillna(imputation_value, inplace=True)
+                imputated_dataframe[variable].fillna(imputation_value, inplace=True)
 
-        return dataframe
+        return imputated_dataframe
 
     def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """_summary_
@@ -331,7 +359,7 @@ class ClsVariableCapping(Capping):
                     else:
                         # Step-4ba Ensuring that passed params are of correct type
                         assert isinstance(
-                            capping_params, (int, float)
+                            float(capping_params), (int, float)
                         ), "IQR Range bound is not an integer/float type"
 
                         # Step-4bb Calling the method to populate the dictionary for
@@ -350,7 +378,7 @@ class ClsVariableCapping(Capping):
                         self._get_capping_bounds(
                             dataframe=dataframe,
                             variable=variable,
-                            capping_type=capping_method,
+                            capping_type=float(capping_method),
                         )
                     else:
                         # Step-4ba Ensuring that passed params are of
@@ -390,22 +418,29 @@ class ClsVariableCapping(Capping):
         Returns:
             _type_: _description_
         """
+        # Step-0 Create a copy of original dataframe
+        capped_dataframe = dataframe.copy()
+
         # Step-1 Iterate all the columns from the applied bucket strategy dictionary
         for variable in self.applied_capping_details.keys():
             lower_bound = self.applied_capping_details[variable]["lower_bound"]
             upper_bound = self.applied_capping_details[variable]["upper_bound"]
 
-            # Step-2 Removing outliers greater than upper bound from the dataframe
-            dataframe[variable] = np.where(
-                dataframe[variable] > upper_bound, upper_bound, dataframe[variable]
+            # Step-2 Removing outliers greater than upper bound from the capped_dataframe
+            capped_dataframe[variable] = np.where(
+                capped_dataframe[variable] > upper_bound,
+                upper_bound,
+                capped_dataframe[variable],
             )
 
-            # Step-3 Removing outliers lower than lower bound from the dataframe
-            dataframe[variable] = np.where(
-                dataframe[variable] < lower_bound, lower_bound, dataframe[variable]
+            # Step-3 Removing outliers lower than lower bound from the capped_dataframe
+            capped_dataframe[variable] = np.where(
+                capped_dataframe[variable] < lower_bound,
+                lower_bound,
+                capped_dataframe[variable],
             )
 
-        return dataframe
+        return capped_dataframe
 
     def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """_summary_
@@ -542,6 +577,9 @@ class ClsVariableEncoding(Encoding):
         Returns:
             _type_: _description_
         """
+        # Step-0 Create a copy of original dataframe
+        encoded_dataframe = dataframe.copy()
+
         # Step-1 Get the encoder, replace_value & encoding_method
         # from the applied_encoding_details dictionary
         encoder = self.applied_encoding_details[variable]["encoder"]
@@ -549,26 +587,26 @@ class ClsVariableEncoding(Encoding):
         encoding_method = self.applied_encoding_details[variable]["encoding_method"]
 
         # Step-2 We are going to transform the column
-        # and return the dataframe
+        # and return the encoded_dataframe
         if encoding_method == "LabelEncoder":
             # replace_value flag determine if we need to drop the source column or not
             # if replace_value is true then drop column else do not drop the column
             if replace_value:
-                dataframe[variable] = encoder.transform(
-                    dataframe[variable].to_numpy().ravel()
+                encoded_dataframe[variable] = encoder.transform(
+                    encoded_dataframe[variable].to_numpy().ravel()
                 )
             else:
-                dataframe[variable + "_Enc"] = encoder.transform(
-                    dataframe[variable].to_numpy().ravel()
+                encoded_dataframe[variable + "_Enc"] = encoder.transform(
+                    encoded_dataframe[variable].to_numpy().ravel()
                 )
 
         elif encoding_method == "OneHotEncoder":
             # Transformation of the column
             transformed = encoder.transform(
-                dataframe[variable].to_numpy().reshape(-1, 1)
+                encoded_dataframe[variable].to_numpy().reshape(-1, 1)
             )
 
-            # one hot encoded dataframe
+            # one hot encoded encoded_dataframe
             columns = [
                 variable + "_" + "_".join(i.split("_")[1:])
                 for i in encoder.get_feature_names()
@@ -576,26 +614,28 @@ class ClsVariableEncoding(Encoding):
             ohe_df = pd.DataFrame(transformed, columns=columns)
 
             if replace_value:
-                dataframe = pd.concat([dataframe, ohe_df], axis=1).drop(
+                encoded_dataframe = pd.concat([encoded_dataframe, ohe_df], axis=1).drop(
                     [variable], axis=1
                 )
             else:
-                dataframe = pd.concat([dataframe, ohe_df], axis=1)
+                encoded_dataframe = pd.concat([encoded_dataframe, ohe_df], axis=1)
 
         elif encoding_method == "OrdinalEncoder":
             if replace_value:
-                dataframe[variable] = encoder.transform(
-                    dataframe[variable].to_numpy().reshape(-1, 1)
+                encoded_dataframe[variable] = encoder.transform(
+                    encoded_dataframe[variable].to_numpy().reshape(-1, 1)
                 ).ravel()
             else:
-                dataframe[variable + "_Enc"] = encoder.transform(
-                    dataframe[variable].to_numpy().reshape(-1, 1)
+                encoded_dataframe[variable + "_Enc"] = encoder.transform(
+                    encoded_dataframe[variable].to_numpy().reshape(-1, 1)
                 ).ravel()
 
         else:
-            raise ValueError("Imputation: Value Not Present In List!")
+            raise ValueError(
+                "Incorrect value passed for encoding_method should be in LabelEncoder, OneHotEncoder, OrdinalEncoder"
+            )
 
-        return dataframe
+        return encoded_dataframe
 
     def _transform(self, dataframe: pd.DataFrame):
         """_summary_
@@ -603,13 +643,18 @@ class ClsVariableEncoding(Encoding):
         Args:
             dataframe (pd.DataFrame): _description_
         """
+        # Step-0 Create a copy of original dataframe
+        encoded_dataframe = dataframe.copy()
+
         # Step-1 Iterate all the columns from the applied_encoding_details dictionary
         for variable in self.applied_encoding_details.keys():
             # Step-2 Based on the applied_encoding_details dictionary
             # perform the transformation
-            dataframe = self._do_transform(dataframe=dataframe, variable=variable)
+            encoded_dataframe = self._do_transform(
+                dataframe=encoded_dataframe, variable=variable
+            )
 
-        return dataframe
+        return encoded_dataframe
 
     def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """_summary_
@@ -702,17 +747,20 @@ class ClsVariableBucketing(Bucketing):
         Args:
             dataframe (pd.DataFrame): _description_
         """
+        # Step-0 Create a copy of original dataframe
+        bucketed_dataframe = dataframe.copy()
+
         # Step-1 Iterate all the columns from the bucket strategy dictionary
         for variable in self.applied_bucket_details.keys():
             # Step-1a Get the bucket_size from applied bucket details dictionary
             bucket_size = self.applied_bucket_details[variable]["bucket_size"]
 
             # Step-2 Transform the data to create bucket columns
-            dataframe = self._do_bucketing(
-                dataframe=dataframe, variable=variable, bucket_size=bucket_size
+            bucketed_dataframe = self._do_bucketing(
+                dataframe=bucketed_dataframe, variable=variable, bucket_size=bucket_size
             )
 
-        return dataframe
+        return bucketed_dataframe
 
     def __call__(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """_summary_
@@ -756,57 +804,19 @@ class ClsVariableBucketing(Bucketing):
         return self.__repr__()
 
 
-class ClsDataPreProcessing:
-    def __init__(
-        self,
-        global_numerical_impute_strategy: str,
-        global_categorical_impute_strategy: str,
-        impute_strategy_config: Dict[str, Dict[str, Union[str, int, float]]],
-        global_capping_strategy: str,
-        capping_strategy_config: Dict[str, Dict[str, int]],
-        global_encoding_strategy: str,
-        global_replace_flag: bool,
-        encoding_strategy_config: Dict[str, Dict[str, Union[str, bool]]],
-        global_bucket_size: int,
-        bucket_strategy_config: Dict[str, Dict[str, int]],
-        enable_imputation: bool,
-        enable_capping: bool,
-        enable_encoding: bool,
-        enable_bucketing: bool,
-    ) -> None:
-        # Step-1 Create instance of each pre-processing class
-        self._imputation = ClsVariableImputation(
-            **{
-                "global_numerical_impute_strategy": global_numerical_impute_strategy,
-                "global_categorical_impute_strategy": global_categorical_impute_strategy,
-                "impute_strategy": impute_strategy_config,
-            }
-        )
-        self._capping = ClsVariableCapping(
-            **{
-                "global_capping_strategy": global_capping_strategy,
-                "capping_strategy": capping_strategy_config,
-            }
-        )
-        self._encoding = ClsVariableEncoding(
-            **{
-                "global_encoding_strategy": global_encoding_strategy,
-                "global_replace_flag": global_replace_flag,
-                "encoding_strategy": encoding_strategy_config,
-            }
-        )
-        self._bucketing = ClsVariableBucketing(
-            **{
-                "global_bucket_size": global_bucket_size,
-                "bucket_strategy": bucket_strategy_config,
-            }
-        )
+class ClsDataPreProcessing(PreProcessing):
+    def __init__(self, **kwargs) -> None:
+        """_summary_"""
+        # Step-1
+        PreProcessing.__init__(self, **kwargs)
+
+        # Step-2 Create instance of each pre-processing class
+        self._imputation_ins = ClsVariableImputation(**self.imputation.dict())
+        self._capping_ins = ClsVariableCapping(**self.capping.dict())
+        self._encoding_ins = ClsVariableEncoding(**self.encoding.dict())
+        self._bucketing_ins = ClsVariableBucketing(**self.bucketing.dict())
 
         # Step- Setting up internal attributes
-        self._imputation_status: bool = enable_imputation
-        self._capping_status: bool = enable_capping
-        self._encoding_status: bool = enable_encoding
-        self._bucketing_status: bool = enable_bucketing
         self.processing_status: bool = False
 
     def __call__(self, dataframe: pd.DataFrame):
@@ -834,20 +844,20 @@ class ClsDataPreProcessing:
 
         # Step-3 Run the pipeline for preprocessing
         ## Step-3a Execute Data Imputation
-        if self._imputation_status:
-            dataframe = self._imputation(dataframe=dataframe)
+        if self.enable_imputation:
+            dataframe = self._imputation_ins(dataframe=dataframe)
 
         ## Step-3b Execute Outlier Capping
-        if self._capping_status:
-            dataframe = self._capping(dataframe=dataframe)
+        if self.enable_capping:
+            dataframe = self._capping_ins(dataframe=dataframe)
 
         ## Step-3c Execute Variable Encoding
-        if self._encoding_status:
-            dataframe = self._encoding(dataframe=dataframe)
+        if self.enable_encoding:
+            dataframe = self._encoding_ins(dataframe=dataframe)
 
         ## Step-3d Execute Variable Bucketing
-        if self._bucketing_status:
-            dataframe = self._bucketing(dataframe=dataframe)
+        if self.enable_bucketing:
+            dataframe = self._bucketing_ins(dataframe=dataframe)
 
         return dataframe
 
@@ -857,13 +867,13 @@ class ClsDataPreProcessing:
             return (
                 "Data Pre-Processing: "
                 + "\nImputation Done?: "
-                + str(self._imputation_status)
+                + str(self.enable_imputation)
                 + "\nCapping Done?: "
-                + str(self._capping_status)
+                + str(self.enable_capping)
                 + "\nEncoding Done?: "
-                + str(self._encoding_status)
+                + str(self.enable_encoding)
                 + "\nBucketing Done?: "
-                + str(self._bucketing_status)
+                + str(self.enable_bucketing)
             )
         else:
             # Step-2 Else raise error

@@ -15,7 +15,7 @@ class FeatureSetColumns(BaseModel):
     dtypes: Dict[str, Union[object, int, float]]
     nuniques: Dict[str, int]
 
-    class config:
+    class Config:
         extra = "allow"
 
     @validator("regression")

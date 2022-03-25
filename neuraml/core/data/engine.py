@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 
 import pandas as pd
-from neuraml.core.data.featureset import ClsDataFeatureSet
-from neuraml.core.data.indexing import ClsDataIndexing
-from neuraml.core.data.preprocessing import ClsDataPreProcessing
+from neuraml.core.data.featureset import ClsDataFeatureSet, FeatureSetColumns
+from neuraml.core.data.indexing import ClsDataIndexing, Indexing
+from neuraml.core.data.preprocessing import ClsDataPreProcessing, PreProcessing
 from neuraml.exceptions.exceptions import (
     EmptyDataFrameError,
     InstanceNotCalledError,
