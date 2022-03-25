@@ -6,7 +6,7 @@ from neuraml.exceptions.exceptions import (
     InstanceNotCalledError,
     NoneError,
 )
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, Field, validator
 from sklearn.model_selection import train_test_split
 
 __all__ = ["ClsDataIndexing"]
@@ -16,19 +16,11 @@ class Indexing(BaseModel):
     stratify: bool = False
     enable_full_data: bool = False
     stratify_variable: Optional[str]
-    train_test_split_size: float = 0.15
+    train_test_split_size: float = Field(0.15, gt=0.0, lt=1.0, example=0.15)
     random_state: int = 42
 
     class Config:
         extra = "allow"
-
-    @validator("train_test_split_size")
-    def validate_train_test_split_size(cls, value):
-        if not ((value > 0.0) and (value < 1.0)):
-            raise ValueError(
-                "train_test_split_size should we within specified range [0.0, 1.0]"
-            )
-        return value
 
     @validator("stratify", pre=True, always=True)
     def validate_stratify(cls, value, values):
@@ -82,9 +74,7 @@ class ClsDataIndexing(Indexing):
                         stratify=dataframe[self.stratify_variable],
                     )
                 else:
-                    raise ValueError(
-                        "stratify_variable: Please provide a valid column name!"
-                    )
+                    raise ValueError("stratify_variable: Please provide a valid column name!")
             else:
                 # Step-4b We will split the whole data without
                 # considering a stratification criteria
