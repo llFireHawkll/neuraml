@@ -5,6 +5,7 @@ __all__ = [
     "EmptyListError",
     "EmptyDataFrameError",
     "VariableInitializationError",
+    "ModelNotFittedError",
 ]
 
 
@@ -62,6 +63,16 @@ class VariableInitializationError(Exception):
     def __init__(self, msg=None):
         if msg is None:
             self.msg = "Variable Not Initialized!"
+        else:
+            self.msg = msg
+
+        super().__init__(self.msg)
+
+
+class ModelNotFittedError(Exception):
+    def __init__(self, msg=None):
+        if msg is None:
+            self.msg = "Model Not Fitted. Please fit your model first!"
         else:
             self.msg = msg
 
