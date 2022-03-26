@@ -87,7 +87,7 @@ class ClsDoShapAnalysis:
             ModelNotFittedError: _description_
             NotImplementedError: _description_
         """
-        if self.model.model_type == "xgboost":
+        if self.model._model_type == "xgboost":
             if self.model._fit_flag:
                 self._xgboost_shap_analysis(
                     dataframe=dataframe,

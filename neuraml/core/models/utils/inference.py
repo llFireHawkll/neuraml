@@ -54,7 +54,7 @@ class ClsModelInference:
             _type_: _description_
         """
         # Step-1 Based on the model_type == xgboost
-        if self.model.model_type == "xgboost":
+        if self.model._model_type == "xgboost":
             if self.model._fit_flag:
                 return self.model.predict(xgb.DMatrix(dataframe))
             else:
