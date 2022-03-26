@@ -9,3 +9,4 @@ pydantic==1.8.2
 pytest==7.1.1
 coverage==6.3.2
 loguru==0.6.0
+matplotlib==3.5.1
