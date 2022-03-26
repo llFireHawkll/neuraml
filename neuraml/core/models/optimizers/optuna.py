@@ -97,6 +97,14 @@ class ClsOptunaOptimizer(OptunaMetrics):
                         q=value_packet.step_value,
                     )
 
+        # Step-4 Calling the model to optimize
+
+        # Step-5 Training the model on set of hyperparameters and scoring
+        # However we are only in validation_score
+        _, validation_score = self.model_hyperparams.scor
+
+        return valid_score
+
     def _setup_optimizer(self):
         self.study = optuna.create_study(
             direction=self.model_config.direction, sampler=self.sampler
