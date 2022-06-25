@@ -40,7 +40,7 @@ class ClsDataIndexing(Indexing):
     """ClsDataIndexing class is responsible for maintaining
     the underlying indexing configuration for our data model. This class
     has method to idenify correct splitting criteria and get correct
-    train and test dataframes indexes
+    train and test dataframes indexes.
 
     Args:
         Indexing (_type_): _description_
