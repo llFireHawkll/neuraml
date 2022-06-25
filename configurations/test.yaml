@@ -1,9 +1,10 @@
 docker:
     image: ubuntu:14.04
     command: cmd
-    
+
 server:
     - port: 8080
     - logs:
-        - access: /var/log/server/access.log
-        - error:  /var/log/server/error.log
+          - access: /var/log/server/access.log
+          - error: /var/log/server/error.log
+          - error: testing
