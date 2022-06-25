@@ -37,6 +37,15 @@ class Indexing(BaseModel):
 
 
 class ClsDataIndexing(Indexing):
+    """ClsDataIndexing class is responsible for maintaining
+    the underlying indexing configuration for our data model. This class
+    has method to idenify correct splitting criteria and get correct
+    train and test dataframes indexes
+
+    Args:
+        Indexing (_type_): _description_
+    """
+
     def __init__(self, **kwargs) -> None:
         Indexing.__init__(self, **kwargs)
 
@@ -74,7 +83,9 @@ class ClsDataIndexing(Indexing):
                         stratify=dataframe[self.stratify_variable],
                     )
                 else:
-                    raise ValueError("stratify_variable: Please provide a valid column name!")
+                    raise ValueError(
+                        "stratify_variable: Please provide a valid column name!"
+                    )
             else:
                 # Step-4b We will split the whole data without
                 # considering a stratification criteria
