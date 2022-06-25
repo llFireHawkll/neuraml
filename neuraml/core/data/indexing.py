@@ -22,18 +22,19 @@ class Indexing(BaseModel):
     class Config:
         extra = "allow"
 
-    @validator("stratify", pre=True, always=True)
+    @validator("stratify_variable", pre=True, always=True)
     def validate_stratify(cls, value, values):
-        stratify_variable = values.get("stratify_variable")
-        if stratify_variable is None:
-            if value:
+        stratify = values.get("stratify")
+
+        if stratify:
+            if value is None:
                 raise ValueError(
                     "Error stratify_variable cannot be set None, when stratify is set True!"
                 )
             else:
                 return value
-
-        return value
+        else:
+            return None
 
 
 class ClsDataIndexing(Indexing):
@@ -47,13 +48,16 @@ class ClsDataIndexing(Indexing):
     """
 
     def __init__(self, **kwargs) -> None:
+        """Initializing the Indexing pydantic basemodel with required parameters"""
         Indexing.__init__(self, **kwargs)
 
         # Setting up internal attributes
         self.state_flag = False  # For storing the state of instance
 
     def __call__(self, dataframe: pd.DataFrame):
-        """ """
+        """This method is where the instance internal methods are called and all the
+        magic happens here.
+        """
         # Step-1 Check for empty dataframe
         if isinstance(dataframe, pd.DataFrame):
             if dataframe.shape[0] == 0:
@@ -100,20 +104,24 @@ class ClsDataIndexing(Indexing):
             self.test_indexes = list(test_data.index)
 
     def __repr__(self):
+        """This method is used to get a summary of the indexing instance"""
         # Step-1 Check state_flag status
         if self.state_flag:
-            return (
-                "Index:"
-                + "\nShape of Input Data: "
-                + str(len(self.train_indexes) + len(self.test_indexes))
-                + "\nShape of Training Data: "
-                + str(len(self.train_indexes))
-                + "\nShape of Testing Data: "
-                + str(len(self.test_indexes))
-            )
+            output_string = f"""Indexing Configuration:
+            Number of Records in Input Data: {str(len(self.train_indexes) + len(self.test_indexes))}
+            Number of Records in Training Data: {str(len(self.train_indexes))}
+            Number of Records in Testing Data: {str(len(self.test_indexes))}"""
+
+            return output_string
         else:
             # Step-2 Else raise error
             raise InstanceNotCalledError()
 
     def __str__(self):
+        """This method is used to get a summary of the indexing instance when print()
+        is called. Internally calls __repr__() special method.
+
+        Returns:
+            __repr__: This method is used to get a summary of the indexing instance
+        """
         return self.__repr__()
