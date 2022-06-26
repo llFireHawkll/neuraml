@@ -7,32 +7,12 @@ from neuraml.exceptions.exceptions import (
     InstanceNotCalledError,
     NoneError,
 )
+from neuraml.utilities.utils import _get_dict_as_string
 from pydantic import BaseModel
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder
 from typing_extensions import Literal
 
 __all__ = ["ClsDataPreProcessing"]
-
-
-def _get_dict_as_string(input_dict) -> str:
-    """_summary_
-
-    Args:
-        input_dict (dict): _description_
-
-    Returns:
-        str: _description_
-    """
-    output_list = []
-
-    for column_name, impute_dict in input_dict.items():
-        temp_list = []
-
-        for key, value in impute_dict.items():
-            temp_list.append(str(key) + ": " + str(value))
-        output_list.append(str(column_name) + " -> " + ", ".join(temp_list))
-
-    return " \n".join(output_list)
 
 
 class Imputation(BaseModel):
